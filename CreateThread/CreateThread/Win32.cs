@@ -5,14 +5,14 @@ namespace CreateThread
 {
     internal class Win32
     {
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr VirtualAlloc(
             IntPtr lpAddress,
             uint dwSize,
             AllocationType flAllocationType,
             MemoryProtection flProtect);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr CreateThread(
             IntPtr lpThreadAttributes,
             uint dwStackSize,
@@ -21,17 +21,29 @@ namespace CreateThread
             uint dwCreationFlags,
             out IntPtr lpThreadId);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool VirtualProtect(
             IntPtr lpAddress,
             uint dwSize,
             MemoryProtection flNewProtect,
             out MemoryProtection lpflOldProtect);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         public static extern uint WaitForSingleObject(
             IntPtr hHandle,
             uint dwMilliseconds);
+
+	    [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr VirtualAllocExNuma(
+			IntPtr hProcess,
+			IntPtr lpAddress,
+			uint dwSize,
+			UInt32 flAllocationType,
+			UInt32 flProtect,
+			UInt32 nndPreferred);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GetCurrentProcess();
 
         [Flags]
         public enum AllocationType
