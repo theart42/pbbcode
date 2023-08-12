@@ -300,7 +300,7 @@ std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
  //       0); // no ssl
-        WINHTTP_FLAG_SECURE_DEFAULTS);          // enable ssl
+        WINHTTP_FLAG_SECURE);          // enable ssl
 
         // create session for target
     HINTERNET hConnect = WinHttpConnect(
