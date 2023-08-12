@@ -223,7 +223,7 @@ int main()
     SystemFunction032(&_data, &key);
 
 #ifdef DEBUGGING
-    printf("Decrypted, press enter to continue..., shellcode size is now %d\n", shellcode_size);
+    printf("Decrypted, press enter to continue...\n");
     getchar();
 #endif
 
