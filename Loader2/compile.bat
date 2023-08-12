@@ -1,0 +1,2 @@
+set CL=/ZI /JMC /nologo /W3 /WX- /diagnostics:classic /sdl /O1 /D _DEBUG /D _CONSOLE /D _UNICODE /D UNICODE /Gm- /EHsc /MDd /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\Debug\\" /Fd"x64\Debug\vc141.pdb" /Gd /TP /FC /errorReport:queue
+msbuild Loader2.sln /p:Configuration="Release" /p:Platform="x64"
