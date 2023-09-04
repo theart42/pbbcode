@@ -9,7 +9,7 @@
 
 // #define DEBUGGING 1
 
-#define MAXSHELLCODESIZE 4096
+#define MAXSHELLCODESIZE 99999
 
 #define _CRT_SECURE_NO_DEPRECATE
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)

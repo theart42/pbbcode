@@ -8,7 +8,7 @@
 
 using namespace std;
 
-#define MAXSHELLCODESIZE 4096
+#define MAXSHELLCODESIZE 99999
 
 // Function prototype for SystemFunction033
 typedef NTSTATUS(WINAPI* _SystemFunction033)(
@@ -27,9 +27,9 @@ int main(int argc, char **argv)
 	unsigned char sSystemFunction033[] = { 'S','y','s','t','e','m','F','u','n','c','t','i','o','n','0','3','3', 0x0 };
 	unsigned char sadvapi32[] = { 'a','d','v','a','p','i','3','2',0x0 };
 	unsigned char buf[MAXSHELLCODESIZE + 1];
-	unsigned int  bytesread;
+	volatile unsigned int  bytesread;
 	FILE *fp;
-	int i;
+	// int i;
 
 	if (argc < 2 || argc > 4) {
 		fprintf(stderr, "Wrong number of arguments: %s INPUTFILENAME (e.g. shellcode.bin) OUTPUTFILENAME (e.g. shellcode.enc)\n", argv[0]);
@@ -44,6 +44,11 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	
+	if (setvbuf(fp, (char *)buf, _IOFBF, sizeof(buf))) {
+		fprintf(stderr, "Setvbuf error\n");
+		exit(1);
+	}
+
 	if ((bytesread = fread(buf, sizeof(char), MAXSHELLCODESIZE, fp)) == 0) {
 		if (ferror(fp)) {
 			fprintf(stderr, "File %s read error %d\n", infile, errno);
@@ -66,9 +71,9 @@ int main(int argc, char **argv)
 	printf("key length is %d\n", sizeof _key);
 	printf("shellcode length is %d, %d\n", bytesread, sizeof buf);
 
-	PVOID buffer = VirtualAlloc(NULL, sizeof(shellcode), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+	//PVOID buffer = VirtualAlloc(NULL, sizeof(shellcode), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
 	// Copy the character array to the allocated memory using memcpy.
-	std::memcpy(buffer, buf, bytesread);
+	//std::memcpy(buffer, buf, bytesread);
 
 	//just setting null values at shellcode, cause why not 
 	//memset(shellcode, 0, shellcode_size);
@@ -83,20 +88,26 @@ int main(int argc, char **argv)
 	_data.Length = bytesread;
 	_data.MaximumLength = bytesread;
 
+/*
 	fprintf(stderr, "unencrypted data:\n");
 	for (i = 0; i < bytesread; i++) {
 		fprintf(stderr, "0x%02x ", ((unsigned char *)buf)[i]);
 	}
 	fprintf(stderr, "\n");
-
+*/
 	//Calling Systemfunction033
+	fprintf(stderr, "Encrypting %d bytes\n", bytesread);
 	SystemFunction033(&_data, &key);
+	fprintf(stderr, "Encrypted %d bytes\n", bytesread);
 
+/*
 	fprintf(stderr, "encrypted data:\n");
 	for (i = 0; i < bytesread; i++) {
 		fprintf(stderr, "0x%02x ", ((unsigned char *)buf)[i]);
 	}
 	fprintf(stderr, "\n");
+*/
+	fprintf(stderr, "Write output\n");
 
 	//Writing encrypted shellcode to bin file
 	if ((fp = fopen(outfile, "wb")) == NULL) {
@@ -104,12 +115,19 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	if (setvbuf(fp, (char *)buf, _IOFBF, sizeof(buf))) {
+		fprintf(stderr, "Setvbuf error\n");
+		exit(1);
+	}
+
+	printf("shellcode length is %d, %d\n", bytesread, sizeof buf);
+
 	// Write the contents of the pvoid pointer to the file. They contents should be encrypted
 	fwrite(buf, bytesread, 1, fp);
 
 	// Close the file
 	fclose(fp);
-
+/*
 	//Calling Systemfunction033 again
 	SystemFunction033(&_data, &key);
 
@@ -118,7 +136,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "0x%02x ", ((unsigned char *)buf)[i]);
 	}
 	fprintf(stderr, "\n");
-
+*/
 
 	//instead if you want to print out the mem contents 
 	/*
